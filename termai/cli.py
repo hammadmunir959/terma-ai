@@ -1,6 +1,7 @@
 """Command-line interface for Terma AI"""
 
 import typer
+import os
 from pathlib import Path
 from typing import Optional
 import sys
@@ -21,6 +22,8 @@ from .core.git_assistant import GitAssistant
 from .core.network_diagnostic import NetworkDiagnostic
 from .core.goal_agent import GoalAgent
 from .core.api_setup import APIKeySetupError, setup_api_key_interactive, check_api_key
+from .core.conversational import ConversationalAgent
+from .core.react_agent import ReActAgent
 
 app = typer.Typer(
     name="termai",
@@ -107,7 +110,8 @@ def run(
 
         # Generate commands from natural language
         display.show_processing(query)
-        llm_response = llm_client.generate_commands(query)
+        working_dir = executor.get_working_directory()
+        llm_response = llm_client.generate_commands(query, working_directory=working_dir)
 
         if llm_response.get("error"):
             display.show_error(llm_response["error"])
@@ -141,11 +145,12 @@ def run(
         for risky in risky_commands_list:
             all_commands.insert(risky["index"], risky["command"])
 
-        # Confirmation
+        # Confirmation - only for risky commands, safe commands auto-execute
         if confirm:
             # Check if there are risky commands
             if safety_result.get("has_risky"):
                 has_critical = any(c.get("risk_level") == "CRITICAL" for c in risky_commands_list)
+                display.console.print("[dim]⚠️  Risky commands detected - confirmation required[/dim]")
                 if not display.confirm_risky_execution(
                     len(risky_commands_list),
                     len(all_commands),
@@ -154,10 +159,8 @@ def run(
                     display.console.print("[yellow]Execution cancelled by user[/yellow]")
                     raise typer.Exit(0)
             else:
-                # Regular confirmation for safe commands only
-                if not display.confirm_execution(len(all_commands)):
-                    display.console.print("[yellow]Execution cancelled by user[/yellow]")
-                    raise typer.Exit(0)
+                # Safe commands execute automatically
+                display.console.print("[dim]✓ Safe commands - executing automatically...[/dim]")
 
         # Dry-run mode
         if dry_run:
@@ -300,6 +303,79 @@ def setup_api():
         raise typer.Exit(0)
     except Exception as e:
         typer.echo(f"❌ Error during setup: {str(e)}", err=True)
+        raise typer.Exit(1)
+
+
+@app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def chat(
+    ctx: typer.Context,
+    query: Optional[str] = typer.Argument(None, help="Your question or request"),
+    cwd: Optional[str] = typer.Option(None, "--cwd", help="Working directory for command execution"),
+    auto_execute: bool = typer.Option(True, "--auto-execute/--no-auto-execute", help="Automatically execute safe commands"),
+    confirm_risky: bool = typer.Option(True, "--confirm-risky/--no-confirm-risky", help="Ask for confirmation before risky commands")
+):
+    """
+    Chat with Terma AI - Ask questions or request actions in natural language.
+    
+    Terma AI will:
+    - Answer questions conversationally (like ChatGPT)
+    - Execute commands when needed and provide natural language summaries
+    
+    Examples:
+        terma chat "what is git?"
+        terma chat "list files in current directory"
+        terma chat "explain how ls command works"
+        terma chat "show me the contents of README.md"
+        terma chat check git status
+    """
+    try:
+        # Combine query with any remaining arguments
+        if query:
+            query_parts = [query]
+        else:
+            query_parts = []
+        
+        # Get remaining arguments from context
+        if ctx.args:
+            query_parts.extend(ctx.args)
+        
+        # Join all parts into a single query
+        if not query_parts:
+            typer.echo("❌ Error: Query is required")
+            typer.echo("Usage: terma chat <your question or request>")
+            typer.echo("Examples:")
+            typer.echo("  terma chat \"what is git?\"")
+            typer.echo("  terma chat \"list files in current directory\"")
+            typer.echo("  terma chat check git status")
+            raise typer.Exit(1)
+        
+        user_query = " ".join(query_parts)
+        
+        # Initialize components (will check for API key)
+        llm_client = LLMClient()
+        working_dir = cwd or os.getcwd()
+        
+        # Create conversational agent
+        agent = ConversationalAgent(llm_client=llm_client, working_directory=working_dir)
+        
+        # Process the query
+        result = agent.process_query(
+            user_query,
+            auto_execute=auto_execute,
+            confirm_risky=confirm_risky
+        )
+        
+        # Exit successfully
+        raise typer.Exit(0)
+        
+    except APIKeySetupError:
+        # Error message already shown by require_api_key()
+        raise typer.Exit(1)
+    except KeyboardInterrupt:
+        typer.echo("\n👋 Chat cancelled")
+        raise typer.Exit(0)
+    except Exception as e:
+        typer.echo(f"❌ Error: {str(e)}", err=True)
         raise typer.Exit(1)
 
 
@@ -665,9 +741,10 @@ git_app = typer.Typer(name="git", help="Natural language Git commands")
 app.add_typer(git_app)
 
 
-@git_app.command()
+@git_app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def run(
-    request: str = typer.Argument(..., help="Natural language Git request"),
+    ctx: typer.Context,
+    request: Optional[str] = typer.Argument(None, help="Natural language Git request"),
     execute: bool = typer.Option(False, "--execute", "-e", help="Execute the generated commands"),
     explain: bool = typer.Option(False, "--explain", help="Show detailed explanations")
 ):
@@ -675,11 +752,31 @@ def run(
     Convert natural language to Git commands.
     
     Examples:
-        termai git "undo last commit but keep changes"
-        termai git "create a new branch called feature" --execute
-        termai git "show recent commits" --explain
-        termai git "stage all files and commit with message"
+        termai git run "undo last commit but keep changes"
+        termai git run create a new branch called feature --execute
+        termai git run show recent commits --explain
+        termai git run initialize terminal_ai/
+        termai git run stage all files and commit with message
     """
+    # Combine request with any remaining arguments
+    if request:
+        request_parts = [request]
+    else:
+        request_parts = []
+    
+    # Get remaining arguments from context
+    if ctx.args:
+        request_parts.extend(ctx.args)
+    
+    # Join all parts into a single request
+    if not request_parts:
+        typer.echo("❌ Error: Git request is required")
+        typer.echo("Usage: termai git run <request>")
+        typer.echo("Example: termai git run initialize repository")
+        raise typer.Exit(1)
+    
+    request = " ".join(request_parts)
+    
     try:
         assistant = GitAssistant()
         result = assistant.process_git_request(request, execute=execute, explain=explain)
@@ -783,6 +880,97 @@ def network_dns(
     except Exception as e:
         display = DisplayManager()
         display.show_error(f"Error: {str(e)}")
+        raise typer.Exit(1)
+
+
+@app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def react(
+    ctx: typer.Context,
+    goal: Optional[str] = typer.Argument(None, help="Goal to achieve using ReAct methodology"),
+    auto_confirm: bool = typer.Option(False, "--auto", help="Auto-confirm risky actions without asking"),
+    max_iterations: int = typer.Option(7, "--max-iterations", help="Maximum number of observe-reason-plan-act cycles (default: 7, 3-5 recommended)"),
+    verbose: bool = typer.Option(True, "--verbose/--quiet", help="Show detailed reasoning and observations"),
+    cwd: Optional[str] = typer.Option(None, "--cwd", help="Working directory for execution")
+):
+    """
+    ReAct Agent: Fully agentic goal achievement using Observe-Reason-Plan-Act loop.
+    
+    The ReAct agent will:
+    1. OBSERVE: Check current system state (files, directories, recent outputs)
+    2. REASON: Analyze if goal is achieved, what's needed, what went wrong
+    3. PLAN: Decide on next action(s) to take
+    4. ACT: Execute the planned commands
+    5. OBSERVE: Check results and loop back to reasoning
+    
+    This continues until:
+    - Goal is achieved ✅
+    - Goal is determined impossible ❌
+    - Maximum iterations reached ⚠️
+    
+    Examples:
+        terma react "create a Python project with README and requirements.txt"
+        terma react "organize all .txt files into a documents folder"
+        terma react "find and display the largest file in current directory"
+        terma react --auto "set up a basic web server"
+        terma react --max-iterations 10 "backup all important files"
+    """
+    # Combine goal with any remaining arguments
+    if goal:
+        goal_parts = [goal]
+    else:
+        goal_parts = []
+    
+    # Get remaining arguments from context
+    if ctx.args:
+        goal_parts.extend(ctx.args)
+    
+    # Join all parts into a single goal
+    if not goal_parts:
+        typer.echo("❌ Error: Goal is required")
+        typer.echo("Usage: terma react <goal description>")
+        typer.echo("Examples:")
+        typer.echo("  terma react \"create a Python project with README\"")
+        typer.echo("  terma react organize all text files")
+        raise typer.Exit(1)
+    
+    goal_description = " ".join(goal_parts)
+    
+    try:
+        # Initialize ReAct agent
+        llm_client = LLMClient()
+        working_dir = cwd or os.getcwd()
+        agent = ReActAgent(llm_client=llm_client, working_directory=working_dir)
+        
+        # Achieve the goal
+        result = agent.achieve_goal(
+            goal_description,
+            auto_confirm=auto_confirm,
+            max_iterations=max_iterations,
+            verbose=verbose
+        )
+        
+        # Show summary
+        agent.show_summary(result)
+        
+        # Exit with appropriate code
+        if result.get("goal_achieved"):
+            raise typer.Exit(0)
+        elif result.get("status") == "impossible":
+            raise typer.Exit(1)
+        elif result.get("status") == "max_iterations":
+            typer.echo("\n[yellow]⚠️  Maximum iterations reached. Goal may not be fully achieved.[/yellow]")
+            raise typer.Exit(1)
+        else:
+            raise typer.Exit(0)
+    
+    except APIKeySetupError:
+        # Error message already shown by require_api_key()
+        raise typer.Exit(1)
+    except KeyboardInterrupt:
+        typer.echo("\n👋 ReAct agent interrupted")
+        raise typer.Exit(0)
+    except Exception as e:
+        typer.echo(f"❌ Error: {str(e)}", err=True)
         raise typer.Exit(1)
 
 

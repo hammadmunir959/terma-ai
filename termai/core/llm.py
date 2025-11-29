@@ -60,18 +60,19 @@ class LLMClient:
                 "api_base": "https://openrouter.ai/api/v1"
             }
 
-    def generate_commands(self, user_input: str) -> Dict[str, Any]:
+    def generate_commands(self, user_input: str, working_directory: Optional[str] = None) -> Dict[str, Any]:
         """
         Convert natural language input to bash commands using LLM
 
         Args:
             user_input: Natural language description of desired action
+            working_directory: Optional working directory to get file context from
 
         Returns:
             Dict containing commands and explanations
         """
         system_prompt = self._get_system_prompt()
-        user_prompt = self._get_user_prompt(user_input)
+        user_prompt = self._get_user_prompt(user_input, working_directory)
 
         try:
             response = self.client.chat.completions.create(
@@ -130,11 +131,57 @@ Guidelines:
         
         return base_prompt
 
-    def _get_user_prompt(self, user_input: str) -> str:
-        """Get the user prompt for command generation"""
-        return f"""Convert this user request into safe bash commands: "{user_input}"
+    def _get_user_prompt(self, user_input: str, working_directory: Optional[str] = None) -> str:
+        """Get the user prompt for command generation with file context"""
+        base_prompt = f"""Convert this user request into safe bash commands: "{user_input}"
+"""
+        
+        # Add file context if working directory is provided
+        if working_directory:
+            file_context = self._get_file_context(working_directory)
+            if file_context:
+                base_prompt += f"""
+IMPORTANT: Available files in current directory:
+{file_context}
 
-Return only valid JSON with commands and explanations."""
+CRITICAL: Use the EXACT filenames (including case) from the list above. 
+- If user says "radmap.md" but file is "ROADMAP.md", use "ROADMAP.md"
+- If user says "readme" but file is "README.md", use "README.md"
+- Match filenames case-insensitively but use the EXACT case from the file list
+- If the user mentions a file that doesn't exist exactly, use the closest match from the available files
+"""
+        
+        base_prompt += "\nReturn only valid JSON with commands and explanations."
+        return base_prompt
+    
+    def _get_file_context(self, directory: str, max_files: int = 20) -> str:
+        """Get a list of files in the directory for context"""
+        try:
+            path = Path(directory)
+            if not path.exists() or not path.is_dir():
+                return ""
+            
+            files = []
+            dirs = []
+            
+            for item in sorted(path.iterdir()):
+                if item.is_file():
+                    files.append(item.name)
+                elif item.is_dir():
+                    dirs.append(item.name + "/")
+            
+            # Combine and limit
+            all_items = files + dirs
+            if len(all_items) > max_files:
+                all_items = all_items[:max_files]
+                all_items.append(f"... and {len(files) + len(dirs) - max_files} more")
+            
+            if all_items:
+                return ", ".join(all_items)
+            return ""
+        
+        except Exception:
+            return ""
 
     def _parse_response(self, content: str) -> Dict[str, Any]:
         """Parse the LLM response into structured data"""
@@ -185,3 +232,155 @@ Return only valid JSON with commands and explanations."""
             return True
         except Exception:
             return False
+
+    def analyze_query(self, user_query: str, working_directory: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Analyze a user query to determine if it needs command execution or just a conversational response
+        
+        Args:
+            user_query: The user's question or request
+            working_directory: Optional working directory for context
+            
+        Returns:
+            Dict with analysis result indicating if commands are needed
+        """
+        system_prompt = """You are an intelligent assistant that analyzes user queries to determine if they need command execution.
+
+Analyze the query and determine:
+1. Does this query require executing terminal commands? (e.g., "list files", "check disk usage", "show git status")
+2. Or is this a general question that can be answered conversationally? (e.g., "what is git?", "how does ls work?", "explain bash")
+
+Return your response as valid JSON:
+{
+  "needs_execution": true/false,
+  "reason": "brief explanation of why execution is/isn't needed",
+  "query_type": "command_request" | "question" | "explanation_request" | "conversational"
+}
+
+Examples:
+- "list files in current directory" → needs_execution: true, query_type: "command_request"
+- "what is git?" → needs_execution: false, query_type: "question"
+- "how do I check disk usage?" → needs_execution: false, query_type: "explanation_request"
+- "show me the contents of README.md" → needs_execution: true, query_type: "command_request"
+- "hello" → needs_execution: false, query_type: "conversational"
+"""
+
+        user_prompt = f"""Analyze this user query: "{user_query}"
+
+Determine if it needs command execution or can be answered conversationally."""
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.config.get("model", "x-ai/grok-4.1-fast:free"),
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.3,
+                max_tokens=200
+            )
+
+            content = response.choices[0].message.content
+            return self._parse_analysis_response(content)
+
+        except Exception as e:
+            # Default to needing execution if analysis fails
+            return {
+                "needs_execution": True,
+                "reason": f"Analysis failed: {str(e)}",
+                "query_type": "command_request"
+            }
+
+    def generate_conversational_response(
+        self, 
+        user_query: str, 
+        command_results: Optional[List[Dict[str, Any]]] = None,
+        working_directory: Optional[str] = None
+    ) -> str:
+        """
+        Generate a natural language response to a user query
+        
+        Args:
+            user_query: The user's question or request
+            command_results: Optional list of command execution results
+            working_directory: Optional working directory for context
+            
+        Returns:
+            Natural language response string
+        """
+        system_prompt = """You are a helpful Linux terminal assistant. Provide clear, friendly, and informative responses.
+
+Guidelines:
+- Be conversational and natural, like ChatGPT
+- Explain things clearly without being overly technical
+- If command results are provided, summarize them in a user-friendly way
+- Answer questions about Linux, commands, and terminal usage
+- Be concise but thorough
+"""
+
+        user_prompt = f"""User query: "{user_query}"
+"""
+
+        # Add command results if available
+        if command_results:
+            results_text = "\nCommand execution results:\n"
+            for i, result in enumerate(command_results, 1):
+                cmd = result.get("command", "")
+                stdout = result.get("stdout", "")
+                stderr = result.get("stderr", "")
+                success = result.get("success", False)
+                
+                results_text += f"\nCommand {i}: {cmd}\n"
+                results_text += f"Success: {success}\n"
+                if stdout:
+                    results_text += f"Output: {stdout[:500]}\n"  # Limit output length
+                if stderr:
+                    results_text += f"Error: {stderr[:500]}\n"
+            
+            user_prompt += results_text
+            user_prompt += "\n\nProvide a natural language summary of what happened and answer the user's query based on these results."
+        else:
+            user_prompt += "\n\nProvide a helpful conversational response to this query."
+
+        # Add file context if available
+        if working_directory:
+            file_context = self._get_file_context(working_directory)
+            if file_context:
+                user_prompt += f"\n\nCurrent directory context: {file_context}"
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.config.get("model", "x-ai/grok-4.1-fast:free"),
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.7,  # Higher temperature for more natural responses
+                max_tokens=800  # More tokens for conversational responses
+            )
+
+            return response.choices[0].message.content.strip()
+
+        except Exception as e:
+            return f"I encountered an error while generating a response: {str(e)}"
+
+    def _parse_analysis_response(self, content: str) -> Dict[str, Any]:
+        """Parse the query analysis response"""
+        try:
+            result = json.loads(content.strip())
+            return {
+                "needs_execution": result.get("needs_execution", True),
+                "reason": result.get("reason", ""),
+                "query_type": result.get("query_type", "command_request")
+            }
+        except json.JSONDecodeError:
+            # Try to extract information from text response
+            content_lower = content.lower()
+            needs_execution = any(keyword in content_lower for keyword in [
+                "needs execution", "requires command", "execute", "run command"
+            ])
+            return {
+                "needs_execution": needs_execution,
+                "reason": "Parsed from text response",
+                "query_type": "command_request" if needs_execution else "question"
+            }

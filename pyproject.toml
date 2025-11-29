@@ -55,10 +55,10 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourname/terma-ai"
-Documentation = "https://github.com/yourname/terma-ai#readme"
-Repository = "https://github.com/yourname/terma-ai"
-Issues = "https://github.com/yourname/terma-ai/issues"
+Homepage = "https://github.com/hammadmunir959/terma-ai"
+Documentation = "https://github.com/hammadmunir959/terma-ai#readme"
+Repository = "https://github.com/hammadmunir959/terma-ai"
+Issues = "https://github.com/hammadmunir959/terma-ai/issues"
 
 [project.scripts]
 termai = "termai.cli:cli"

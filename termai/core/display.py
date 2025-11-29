@@ -1,11 +1,13 @@
 """Display utilities for rich terminal output"""
 
 from typing import List, Dict, Any
+import os
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 from rich.table import Table
 from rich.columns import Columns
+from .file_helper import suggest_files_for_error
 from rich.prompt import Confirm
 
 
@@ -171,16 +173,57 @@ class DisplayManager:
 
     def show_execution_results(self, results: List[Dict[str, Any]], verbose: bool = False):
         """Display execution results"""
-        successful = sum(1 for r in results if r["success"])
+        successful = sum(1 for r in results if r.get("success", False) or r.get("return_code", 1) == 0)
         total = len(results)
 
+        # Calculate success rate
+        if total > 0:
+            success_rate = (successful / total) * 100
+            success_rate_str = f"{success_rate:.1f}%"
+        else:
+            success_rate_str = "0%"
+
+        # Show command output for each result
+        for i, result in enumerate(results, 1):
+            command = result.get("command", "Unknown command")
+            stdout = result.get("stdout", "").strip()
+            stderr = result.get("stderr", "").strip()
+            return_code = result.get("return_code", -1)
+            success = result.get("success", return_code == 0)
+            
+            # Show output
+            if stdout:
+                self.console.print(f"\n[bold green]📄 Output:[/bold green]")
+                self.console.print(stdout)
+            
+            if stderr:
+                self.console.print(f"\n[bold red]⚠️  Error Output:[/bold red]")
+                self.console.print(stderr)
+                
+                # Check for "file not found" errors and suggest similar files
+                if "No such file or directory" in stderr or "cannot open" in stderr.lower():
+                    cwd = os.getcwd()
+                    suggestions = suggest_files_for_error(stderr, cwd)
+                    if suggestions:
+                        self.console.print(f"\n[bold yellow]💡 Did you mean one of these files?[/bold yellow]")
+                        for suggestion in suggestions[:5]:  # Show max 5 suggestions
+                            self.console.print(f"  • [cyan]{suggestion}[/cyan]")
+            
+            # Show status if command failed
+            if not success:
+                self.console.print(f"\n[bold red]❌ Command failed with return code: {return_code}[/bold red]")
+            elif not stdout and not stderr:
+                # Command succeeded but produced no output
+                self.console.print(f"\n[dim]✓ Command completed successfully (no output)[/dim]")
+
         # Summary
+        self.console.print("\n")
         summary_table = Table(title="📊 Execution Summary", show_header=False)
         summary_table.add_column("Metric", style="cyan")
         summary_table.add_column("Value", style="green")
 
         summary_table.add_row("Commands executed", str(total))
-        summary_table.add_row("Success rate", ".1%")
+        summary_table.add_row("Success rate", success_rate_str)
 
         self.console.print(summary_table)
 
@@ -188,22 +231,19 @@ class DisplayManager:
         if verbose and results:
             self.console.print("\n[bold]Detailed Results:[/bold]")
             for result in results:
-                status_icon = "✅" if result["success"] else "❌"
-                status_color = "green" if result["success"] else "red"
+                status_icon = "✅" if result.get("success", False) else "❌"
+                status_color = "green" if result.get("success", False) else "red"
+                execution_time = result.get("execution_time", 0.0)
+
+                panel_content = f"[bold]{status_icon} {result.get('command', 'Unknown')}[/bold]\n"
+                panel_content += f"Execution time: {execution_time:.2f}s\n"
+                panel_content += f"[dim]Return code: {result.get('return_code', -1)}[/dim]"
 
                 panel = Panel(
-                    f"[bold]{status_icon} {result['command']}[/bold]\n"
-                    ".2f"
-                    f"\n[dim]Return code: {result['return_code']}[/dim]",
-                    title=f"Command {result['command_index'] + 1}",
+                    panel_content,
+                    title=f"Command {result.get('command_index', 0) + 1}",
                     border_style=status_color
                 )
-
-                if result["stdout"]:
-                    panel.renderable += f"\n\n📄 [bold green]Output:[/bold green]\n{result['stdout']}"
-
-                if result["stderr"]:
-                    panel.renderable += f"\n\n⚠️  [bold red]Error:[/bold red]\n{result['stderr']}"
 
                 self.console.print(panel)
 

@@ -9,6 +9,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 from rich.table import Table
+from .file_helper import correct_filename_in_command
 
 
 class CommandExecutor:
@@ -18,6 +19,7 @@ class CommandExecutor:
         """Initialize the command executor"""
         self.working_directory = working_directory or os.getcwd()
         self.last_execution_time = 0.0
+        self.console = Console()
 
     def execute_commands(self, commands: List[str], explanations: List[str]) -> Dict[str, Any]:
         """
@@ -33,8 +35,14 @@ class CommandExecutor:
         results = []
 
         for i, (cmd, explanation) in enumerate(zip(commands, explanations)):
-            print(f"\n🔄 Executing: {cmd}")
-            print(f"📝 {explanation}")
+            # Auto-correct filenames (case-insensitive matching)
+            corrected_cmd, was_corrected = correct_filename_in_command(cmd, self.working_directory)
+            if was_corrected:
+                self.console.print(f"\n[dim yellow]🔧 Auto-corrected filename:[/dim yellow] [dim]{cmd}[/dim] → [green]{corrected_cmd}[/green]")
+                cmd = corrected_cmd
+            
+            self.console.print(f"\n[bold]🔄 Executing:[/bold] [cyan]{cmd}[/cyan]")
+            self.console.print(f"[dim]📝 {explanation}[/dim]")
 
             start_time = time.time()
             result = self._execute_single_command(cmd)
@@ -49,7 +57,7 @@ class CommandExecutor:
 
             # Stop execution if a command fails critically
             if result["return_code"] != 0 and self._is_critical_failure(cmd, result):
-                print(f"❌ Critical failure in command {i+1}, stopping execution")
+                self.console.print(f"[red]❌ Critical failure in command {i+1}, stopping execution[/red]")
                 break
 
         return {

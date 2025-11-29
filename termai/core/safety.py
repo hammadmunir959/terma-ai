@@ -1,4 +1,21 @@
-"""Safety checker for bash commands"""
+"""Safety checker for bash commands
+
+RISKY COMMAND CATEGORIES (Always require confirmation):
+1. FILE DELETION: rm, unlink, delete - Data cannot be recovered easily
+2. FILE MODIFICATION: mv, cp, chmod, chown, chgrp - Can overwrite or change files
+3. FILE WRITING: >, >>, tee - Can overwrite existing files
+4. SYSTEM DESTRUCTION: dd, mkfs, fdisk, parted, format - Can destroy entire system
+5. PRIVILEGE ESCALATION: sudo, su, doas - Requires elevated privileges
+6. SYSTEM FILE MODIFICATION: Writing to /etc/, /boot/, /bin/, etc. - System critical
+7. DANGEROUS PERMISSIONS: chmod 777, chown root - Security risks
+8. NETWORK/FIREWALL: iptables -F, route deletion - Can break network
+9. PROCESS MANAGEMENT: kill -9, killall - Force killing processes
+10. PACKAGE MANAGEMENT: apt remove, yum remove - Removing system packages
+11. DIRECTORY OPERATIONS: rmdir, mkdir in system paths - Can affect system structure
+
+SAFE COMMANDS (Auto-execute):
+- Read-only: ls, cat, find, grep, pwd, df, du, head, tail, less, more, wc, stat, file, which, whereis, locate, type, command -v
+"""
 
 import re
 from typing import List, Dict, Any, Tuple
@@ -92,14 +109,24 @@ class SafetyChecker:
             r'\bchmod\s+777\s+-R\b',
         ]
         
-        # Level 2 - Potentially risky operations
+        # Level 2 - File deletion and modification operations
         level2_patterns = [
-            r'\brm\s+-rf\b',
-            r'\bchmod\s+-R\b',
-            r'\bchown\s+-R\b',
+            r'\brm\s+',  # Any rm command (file deletion)
+            r'\bunlink\b',  # File deletion
+            r'\bmv\s+',  # Moving files (can overwrite)
+            r'\bchmod\s+',  # Permission changes
+            r'\bchown\s+',  # Ownership changes
+            r'>\s+',  # File overwriting
+            r'\brmdir\s+',  # Directory removal
         ]
         
         # Level 1 - Safe read operations (default)
+        read_only_patterns = [
+            r'\bls\b', r'\bcat\b', r'\bfind\b', r'\bgrep\b', r'\bpwd\b', 
+            r'\bdf\b', r'\bdu\b', r'\bhead\b', r'\btail\b', r'\bless\b',
+            r'\bmore\b', r'\bwc\b', r'\bstat\b', r'\bfile\b', r'\bwhich\b',
+            r'\bwhereis\b', r'\blocate\b', r'\btype\b', r'\bcommand\s+-v\b'
+        ]
         
         for pattern in level5_patterns:
             if re.search(pattern, command, re.IGNORECASE):
@@ -118,11 +145,11 @@ class SafetyChecker:
                 return 2
         
         # Check if it's a read-only command
-        read_only_patterns = [r'\bls\b', r'\bcat\b', r'\bfind\b', r'\bgrep\b', r'\bpwd\b', r'\bdf\b', r'\bdu\b']
         if any(re.search(pattern, command, re.IGNORECASE) for pattern in read_only_patterns):
             return 1
         
-        return 2  # Default to level 2 for unknown commands
+        # Default to level 2 for unknown commands (better safe than sorry)
+        return 2
 
     def _get_risk_level(self, command: str) -> str:
         """Get the risk level category of a command"""
@@ -183,39 +210,76 @@ class SafetyChecker:
         return False, ""
 
     def _get_dangerous_patterns(self) -> List[Tuple[str, str]]:
-        """Get patterns for dangerous commands that should be blocked"""
+        """Get patterns for dangerous commands that require confirmation"""
         return [
-            # File system destruction
-            (r'\brm\s+-rf\s+/', "Dangerous: 'rm -rf /' can destroy entire system"),
-            (r'\brm\s+-rf\s+\*', "Dangerous: 'rm -rf *' can delete all files"),
-            (r'\bdd\s+if=/dev/zero', "Dangerous: 'dd if=/dev/zero' can overwrite disks"),
-
-            # Privilege escalation
-            (r'\bsudo\b', "Blocked: sudo commands require manual execution"),
-            (r'\bsu\b', "Blocked: privilege escalation not allowed"),
-
-            # System formatting
-            (r'\bmkfs\b', "Dangerous: filesystem formatting can destroy data"),
-            (r'\bfdisk\b', "Dangerous: disk partitioning can destroy data"),
-            (r'\bparted\b', "Dangerous: partition editing can destroy data"),
-
-            # Dangerous permissions
-            (r'\bchmod\s+777\s+-R\b', "Dangerous: recursive 777 permissions are insecure"),
-            (r'\bchown\s+root\b', "Dangerous: changing ownership to root"),
-
-            # System file editing
-            (r'>\s*/etc/', "Blocked: modifying system configuration files"),
-            (r'>\s*/boot/', "Blocked: modifying boot files"),
-            (r'>\s*/bin/', "Blocked: modifying system binaries"),
-            (r'>\s*/usr/bin/', "Blocked: modifying system binaries"),
-
-            # Network dangerous
-            (r'\biptables\s+-F', "Dangerous: flushing firewall rules"),
-            (r'\biptables\s+-X', "Dangerous: deleting firewall rules"),
-
-            # Process killing
-            (r'\bkill\s+-9\s+-1', "Dangerous: killing all processes"),
-            (r'\bkillall\s+-9', "Dangerous: force killing all instances"),
+            # ===== FILE DELETION (RISKY CATEGORY 1) =====
+            (r'\brm\s+-rf\s+/', "CRITICAL: 'rm -rf /' can destroy entire system"),
+            (r'\brm\s+-rf\s+\*', "CRITICAL: 'rm -rf *' can delete all files"),
+            (r'\brm\s+-rf\b', "HIGH: Recursive deletion can remove multiple files"),
+            (r'\brm\s+', "MEDIUM: File deletion - data cannot be recovered easily"),
+            (r'\bunlink\b', "MEDIUM: File deletion command"),
+            (r'\bdelete\b', "MEDIUM: File deletion operation"),
+            
+            # ===== FILE MODIFICATION (RISKY CATEGORY 2) =====
+            (r'\bmv\s+', "MEDIUM: Moving/renaming files can overwrite existing files"),
+            (r'\bcp\s+', "LOW-MEDIUM: Copying files can overwrite existing files"),
+            (r'\bchmod\s+', "MEDIUM: Changing file permissions"),
+            (r'\bchown\s+', "MEDIUM: Changing file ownership"),
+            (r'\bchgrp\s+', "MEDIUM: Changing file group"),
+            (r'\btouch\s+', "LOW: Creating/modifying file timestamps"),
+            
+            # ===== FILE WRITING/OVERWRITING (RISKY CATEGORY 3) =====
+            (r'>\s+', "MEDIUM: Redirecting output can overwrite files"),
+            (r'>>\s+', "LOW: Appending to files (safer but still modification)"),
+            (r'\btee\s+', "MEDIUM: Writing to files"),
+            
+            # ===== SYSTEM DESTRUCTION (RISKY CATEGORY 4 - CRITICAL) =====
+            (r'\bdd\s+if=/dev/zero', "CRITICAL: 'dd if=/dev/zero' can overwrite disks"),
+            (r'\bmkfs\b', "CRITICAL: Filesystem formatting can destroy data"),
+            (r'\bfdisk\b', "CRITICAL: Disk partitioning can destroy data"),
+            (r'\bparted\b', "CRITICAL: Partition editing can destroy data"),
+            (r'\bformat\b', "CRITICAL: Formatting can destroy data"),
+            
+            # ===== PRIVILEGE ESCALATION (RISKY CATEGORY 5) =====
+            (r'\bsudo\b', "HIGH: Sudo commands require elevated privileges"),
+            (r'\bsu\b', "HIGH: Privilege escalation"),
+            (r'\bdoas\b', "HIGH: Privilege escalation"),
+            
+            # ===== SYSTEM FILE MODIFICATION (RISKY CATEGORY 6) =====
+            (r'>\s*/etc/', "CRITICAL: Modifying system configuration files"),
+            (r'>\s*/boot/', "CRITICAL: Modifying boot files"),
+            (r'>\s*/bin/', "CRITICAL: Modifying system binaries"),
+            (r'>\s*/usr/bin/', "CRITICAL: Modifying system binaries"),
+            (r'>\s*/sbin/', "CRITICAL: Modifying system binaries"),
+            (r'>\s*/lib/', "CRITICAL: Modifying system libraries"),
+            
+            # ===== DANGEROUS PERMISSIONS (RISKY CATEGORY 7) =====
+            (r'\bchmod\s+777\s+-R\b', "HIGH: Recursive 777 permissions are insecure"),
+            (r'\bchmod\s+777\b', "MEDIUM-HIGH: 777 permissions are insecure"),
+            (r'\bchown\s+root\b', "HIGH: Changing ownership to root"),
+            (r'\bchmod\s+-R\b', "MEDIUM: Recursive permission changes"),
+            (r'\bchown\s+-R\b', "MEDIUM: Recursive ownership changes"),
+            
+            # ===== NETWORK/FIREWALL (RISKY CATEGORY 8) =====
+            (r'\biptables\s+-F', "HIGH: Flushing firewall rules"),
+            (r'\biptables\s+-X', "HIGH: Deleting firewall rules"),
+            (r'\bip\s+route\s+del', "MEDIUM: Deleting network routes"),
+            
+            # ===== PROCESS MANAGEMENT (RISKY CATEGORY 9) =====
+            (r'\bkill\s+-9\s+-1', "CRITICAL: Killing all processes"),
+            (r'\bkillall\s+-9', "HIGH: Force killing all instances"),
+            (r'\bkill\s+-9\b', "MEDIUM: Force killing processes"),
+            (r'\bpkill\s+', "MEDIUM: Killing processes by name"),
+            
+            # ===== PACKAGE MANAGEMENT (RISKY CATEGORY 10) =====
+            (r'\bapt\s+(remove|purge|autoremove)', "MEDIUM: Removing packages"),
+            (r'\byum\s+remove', "MEDIUM: Removing packages"),
+            (r'\bdnf\s+remove', "MEDIUM: Removing packages"),
+            (r'\bpacman\s+-R', "MEDIUM: Removing packages"),
+            
+            # ===== DIRECTORY OPERATIONS (RISKY CATEGORY 11) =====
+            (r'\brmdir\s+', "MEDIUM: Removing directories"),
+            (r'\bmkdir\s+-p\s+/', "HIGH: Creating directories in system paths"),
         ]
 
     def _get_warning_patterns(self) -> List[Tuple[str, str]]:
