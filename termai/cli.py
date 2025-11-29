@@ -24,6 +24,7 @@ from .core.goal_agent import GoalAgent
 from .core.api_setup import APIKeySetupError, setup_api_key_interactive, check_api_key
 from .core.conversational import ConversationalAgent
 from .core.react_agent import ReActAgent
+from .core.system_info import SystemInfoCollector
 
 app = typer.Typer(
     name="termai",
@@ -283,6 +284,95 @@ def config():
 
     except Exception as e:
         typer.echo(f"❌ Error loading configuration: {str(e)}", err=True)
+        raise typer.Exit(1)
+
+
+@app.command("system-info")
+def system_info():
+    """Show comprehensive system information collected by Terma AI"""
+    try:
+        collector = SystemInfoCollector()
+        
+        typer.echo("🖥️  System Information Collected by Terma AI\n")
+        typer.echo("=" * 70)
+        
+        # OS Information
+        os_info = collector.info.get("os", {})
+        typer.echo("\n📦 Operating System:")
+        if os_info.get("distribution"):
+            typer.echo(f"  Distribution: {os_info.get('distribution', 'unknown')}")
+            typer.echo(f"  Version: {os_info.get('version', 'unknown')}")
+            if os_info.get("codename"):
+                typer.echo(f"  Codename: {os_info.get('codename')}")
+        else:
+            typer.echo(f"  System: {os_info.get('system', 'unknown')}")
+            typer.echo(f"  Release: {os_info.get('release', 'unknown')}")
+        typer.echo(f"  Architecture: {os_info.get('machine', 'unknown')}")
+        
+        # Shell Information
+        shell_info = collector.info.get("shell", {})
+        typer.echo("\n🐚 Shell:")
+        typer.echo(f"  Current Shell: {shell_info.get('shell_name', 'unknown')}")
+        typer.echo(f"  Shell Path: {shell_info.get('current_shell', 'unknown')}")
+        if shell_info.get("shell_version") != "unknown":
+            typer.echo(f"  Version: {shell_info.get('shell_version')}")
+        if shell_info.get("is_wsl"):
+            typer.echo("  ⚠️  Running in WSL (Windows Subsystem for Linux)")
+        if shell_info.get("is_docker"):
+            typer.echo("  ⚠️  Running in Docker container")
+        
+        # Package Manager
+        pm_info = collector.info.get("package_manager", {})
+        typer.echo("\n📦 Package Managers:")
+        if pm_info.get("primary"):
+            typer.echo(f"  Primary: {pm_info['primary']}")
+        available = [pm for pm, avail in pm_info.get("available", {}).items() if avail]
+        if available:
+            typer.echo(f"  Available: {', '.join(available)}")
+        
+        # Python
+        python_info = collector.info.get("python", {})
+        typer.echo("\n🐍 Python:")
+        typer.echo(f"  Version: {python_info.get('version', 'unknown')}")
+        typer.echo(f"  Implementation: {python_info.get('implementation', 'unknown')}")
+        
+        # User
+        user_info = collector.info.get("user", {})
+        typer.echo("\n👤 User:")
+        typer.echo(f"  Username: {user_info.get('username', 'unknown')}")
+        typer.echo(f"  Home Directory: {user_info.get('home', 'unknown')}")
+        if user_info.get("is_root"):
+            typer.echo("  ⚠️  Running as root user")
+        
+        # Capabilities
+        caps = collector.info.get("capabilities", {})
+        typer.echo("\n🛠️  Available Tools:")
+        available_tools = []
+        for tool in ["git", "docker", "node", "npm", "sudo", "python3", "pip3"]:
+            if caps.get(tool):
+                version = caps.get("versions", {}).get(tool, "")
+                if version:
+                    available_tools.append(f"{tool} ({version})")
+                else:
+                    available_tools.append(tool)
+        if available_tools:
+            typer.echo(f"  {', '.join(available_tools)}")
+        else:
+            typer.echo("  None detected")
+        
+        # Environment
+        env_info = collector.info.get("environment", {})
+        typer.echo("\n🌍 Environment:")
+        if env_info.get("editor") != "unknown":
+            typer.echo(f"  Default Editor: {env_info.get('editor')}")
+        typer.echo(f"  Language: {env_info.get('lang', 'unknown')}")
+        
+        typer.echo("\n" + "=" * 70)
+        typer.echo("\n💡 This information is automatically collected and used by Terma AI")
+        typer.echo("   to generate more accurate and context-aware commands.\n")
+        
+    except Exception as e:
+        typer.echo(f"❌ Error collecting system information: {str(e)}", err=True)
         raise typer.Exit(1)
 
 

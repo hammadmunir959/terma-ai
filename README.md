@@ -4,7 +4,7 @@
 
 Terma AI is an intelligent command-line tool that transforms your Linux terminal into a goal-oriented AI assistant. Instead of remembering commands, describe what you want to achieve in plain English. Powered by OpenRouter's free LLMs, it understands your goals, asks clarifying questions, plans the steps, and executes them safely with your confirmation.
 
-![Version](https://img.shields.io/badge/version-3.0.0-blue)
+![Version](https://img.shields.io/badge/version-1.4.0-blue)
 ![Python](https://img.shields.io/badge/python-3.10+-green)
 ![License](https://img.shields.io/badge/license-MIT-orange)
 

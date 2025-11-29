@@ -14,6 +14,7 @@ from .preferences import Preferences
 from .api_setup import APIKeySetupError
 from .conversational import ConversationalAgent
 from .react_agent import ReActAgent
+from .system_info import SystemInfoCollector
 
 
 class TermaShell:
@@ -48,6 +49,12 @@ class TermaShell:
         self.context_history: List[str] = []
         self.command_history: List[str] = []
         self.running = True
+        
+        # System information (collected once at startup)
+        try:
+            self.system_info = SystemInfoCollector()
+        except Exception:
+            self.system_info = None
 
     def start(self):
         """Start the interactive shell"""
@@ -129,6 +136,10 @@ class TermaShell:
                 self.console.print("[dim]Example: react create a Python project with README[/dim]")
             return True
         
+        elif cmd == "system-info" or cmd == "sysinfo":
+            self._show_system_info()
+            return True
+        
         return False
 
     def _process_command(self, user_input: str):
@@ -208,6 +219,7 @@ class TermaShell:
   [cyan]help[/cyan]                    - Show this help message
   [cyan]cd <path>[/cyan]               - Change working directory
   [cyan]react <goal>[/cyan]            - Use ReAct agent to achieve a goal
+  [cyan]system-info[/cyan], [cyan]sysinfo[/cyan] - Show system information
 
 [bold]Usage:[/bold]
   [bold]Regular mode:[/bold] Just type your request in natural language:
@@ -239,6 +251,88 @@ class TermaShell:
         history_text = "\n".join(f"{i+1}. {cmd}" for i, cmd in enumerate(self.command_history[-10:]))
         self.console.print(Panel(history_text, title="Command History (last 10)", border_style="blue"))
 
+    def _show_system_info(self):
+        """Show system information"""
+        if not self.system_info:
+            self.console.print("[yellow]⚠️  System information not available[/yellow]")
+            return
+        
+        info = self.system_info
+        
+        # Build system info display
+        info_lines = []
+        
+        # OS Information
+        os_info = info.info.get("os", {})
+        info_lines.append("[bold]📦 Operating System:[/bold]")
+        if os_info.get("distribution"):
+            info_lines.append(f"  Distribution: {os_info.get('distribution', 'unknown')}")
+            info_lines.append(f"  Version: {os_info.get('version', 'unknown')}")
+        else:
+            info_lines.append(f"  System: {os_info.get('system', 'unknown')} {os_info.get('release', '')}")
+        info_lines.append(f"  Architecture: {os_info.get('machine', 'unknown')}")
+        info_lines.append("")
+        
+        # Shell Information
+        shell_info = info.info.get("shell", {})
+        info_lines.append("[bold]🐚 Shell:[/bold]")
+        info_lines.append(f"  Current Shell: {shell_info.get('shell_name', 'unknown')}")
+        if shell_info.get("shell_version") != "unknown":
+            info_lines.append(f"  Version: {shell_info.get('shell_version')}")
+        if shell_info.get("is_wsl"):
+            info_lines.append("  ⚠️  Running in WSL")
+        if shell_info.get("is_docker"):
+            info_lines.append("  ⚠️  Running in Docker")
+        info_lines.append("")
+        
+        # Package Manager
+        pm_info = info.info.get("package_manager", {})
+        info_lines.append("[bold]📦 Package Manager:[/bold]")
+        if pm_info.get("primary"):
+            info_lines.append(f"  Primary: {pm_info['primary']}")
+        available = [pm for pm, avail in pm_info.get("available", {}).items() if avail]
+        if available:
+            info_lines.append(f"  Available: {', '.join(available)}")
+        info_lines.append("")
+        
+        # Python
+        python_info = info.info.get("python", {})
+        info_lines.append("[bold]🐍 Python:[/bold]")
+        info_lines.append(f"  Version: {python_info.get('version', 'unknown')}")
+        info_lines.append("")
+        
+        # User
+        user_info = info.info.get("user", {})
+        info_lines.append("[bold]👤 User:[/bold]")
+        info_lines.append(f"  Username: {user_info.get('username', 'unknown')}")
+        if user_info.get("is_root"):
+            info_lines.append("  ⚠️  Running as root")
+        info_lines.append("")
+        
+        # Capabilities
+        caps = info.info.get("capabilities", {})
+        info_lines.append("[bold]🛠️  Available Tools:[/bold]")
+        available_tools = []
+        for tool in ["git", "docker", "node", "npm", "sudo", "python3", "pip3"]:
+            if caps.get(tool):
+                version = caps.get("versions", {}).get(tool, "")
+                if version:
+                    available_tools.append(f"{tool} ({version})")
+                else:
+                    available_tools.append(tool)
+        if available_tools:
+            info_lines.append(f"  {', '.join(available_tools)}")
+        else:
+            info_lines.append("  None detected")
+        
+        info_text = "\n".join(info_lines)
+        self.console.print(Panel(
+            info_text,
+            title="🖥️  System Information",
+            border_style="cyan"
+        ))
+        self.console.print("[dim]💡 This information is automatically used by Terma AI to generate accurate commands[/dim]")
+    
     def _exit_shell(self):
         """Exit the shell gracefully"""
         self.running = False

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "terma-ai"
-version = "3.0.0"
+version = "1.4.0"
 description = "Natural language terminal agent powered by OpenRouter LLMs. Convert plain English to safe bash commands with AI assistance."
 readme = "README.md"
 license = {text = "MIT"}
@@ -29,7 +29,6 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: System Administrators",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
@@ -46,6 +45,7 @@ dependencies = [
     "pyyaml>=6.0",
     "rich>=13.0.0",
     "python-dotenv>=1.0.0",
+    "distro>=1.8.0",
 ]
 
 [project.optional-dependencies]

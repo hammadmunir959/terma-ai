@@ -8,6 +8,7 @@ import yaml
 from pathlib import Path
 from dotenv import load_dotenv
 from .api_setup import require_api_key, APIKeySetupError
+from .system_info import SystemInfoCollector
 
 
 class LLMClient:
@@ -26,6 +27,13 @@ class LLMClient:
         load_dotenv()
         self.config = self._load_config(config_path)
         self.preferences = preferences
+        
+        # Collect system information for better context
+        try:
+            self.system_info = SystemInfoCollector()
+        except Exception:
+            # Fallback if system info collection fails
+            self.system_info = None
 
         # Check for API key with helpful error messages
         if require_key:
@@ -123,6 +131,19 @@ Guidelines:
 - If the request is too dangerous, set "safe": false and provide safe alternatives
 - Focus on common Linux tasks: file operations, searching, monitoring, text processing"""
         
+        # Add system information for better context
+        if self.system_info:
+            try:
+                system_context = self.system_info.get_detailed_context()
+                base_prompt += f"\n\nSYSTEM CONTEXT (Use this to generate accurate commands):\n{system_context}\n"
+                base_prompt += "\nIMPORTANT: Use the system information above to:\n"
+                base_prompt += "- Choose the correct package manager (apt, yum, dnf, pacman, etc.)\n"
+                base_prompt += "- Use appropriate shell syntax for the detected shell\n"
+                base_prompt += "- Consider available tools and capabilities\n"
+                base_prompt += "- Adapt commands to the specific Linux distribution\n"
+            except Exception:
+                pass  # Silently fail if system info can't be added
+        
         # Add preferences if available
         if self.preferences:
             prefs_text = self.preferences.get_system_prompt_addition()
@@ -135,6 +156,14 @@ Guidelines:
         """Get the user prompt for command generation with file context"""
         base_prompt = f"""Convert this user request into safe bash commands: "{user_input}"
 """
+        
+        # Add system summary for quick reference
+        if self.system_info:
+            try:
+                system_summary = self.system_info.get_summary()
+                base_prompt += f"\nSystem Summary:\n{system_summary}\n"
+            except Exception:
+                pass
         
         # Add file context if working directory is provided
         if working_directory:
