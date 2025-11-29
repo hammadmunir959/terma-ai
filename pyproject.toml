@@ -1,0 +1,75 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "terma-ai"
+version = "3.0.0"
+description = "Natural language terminal agent powered by OpenRouter LLMs. Convert plain English to safe bash commands with AI assistance."
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Hammad Munir", email = "hammadmunir959@gmail.com"}
+]
+maintainers = [
+    {name = "Hammad Munir", email = "hammadmunir959@gmail.com"}
+]
+keywords = [
+    "terminal",
+    "ai",
+    "llm",
+    "bash",
+    "cli",
+    "natural-language",
+    "openrouter",
+    "automation",
+    "linux"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Systems Administration",
+    "Topic :: Utilities",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "typer>=0.9.0",
+    "openai>=1.0.0",
+    "pyyaml>=6.0",
+    "rich>=13.0.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourname/terma-ai"
+Documentation = "https://github.com/yourname/terma-ai#readme"
+Repository = "https://github.com/yourname/terma-ai"
+Issues = "https://github.com/yourname/terma-ai/issues"
+
+[project.scripts]
+termai = "termai.cli:cli"
+terma = "termai.cli:cli"
+
+[tool.setuptools]
+packages = ["termai", "termai.core"]
+
+[tool.setuptools.package-data]
+termai = ["settings.yaml"]
+
+[tool.setuptools.package-dir]
+"" = "."
+

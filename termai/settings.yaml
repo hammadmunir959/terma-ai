@@ -1,0 +1,16 @@
+provider: "openrouter"
+model: "x-ai/grok-4.1-fast:free"
+temperature: 0.2
+max_tokens: 300
+api_base: "https://openrouter.ai/api/v1"
+
+# Safety settings
+safety_enabled: true
+require_confirmation: true
+
+# Fallback models (in order of preference)
+fallback_models:
+  - "meta-llama/llama-3.3-70b-instruct:free"
+  - "qwen/qwen-2.5-7b-instruct:free"
+  - "google/gemma-2-9b-it:free"
+  - "microsoft/phi-3-mini-128k-instruct:free"
