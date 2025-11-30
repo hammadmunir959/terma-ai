@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "terma-ai"
-version = "1.4.1"
+version = "1.4.2"
 description = "Natural language terminal agent powered by OpenRouter LLMs. Convert plain English to safe bash commands with AI assistance."
 readme = "README.md"
 license = {text = "MIT"}
