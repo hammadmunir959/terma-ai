@@ -68,27 +68,38 @@ class LLMClient:
                 "api_base": "https://openrouter.ai/api/v1"
             }
 
-    def generate_commands(self, user_input: str, working_directory: Optional[str] = None) -> Dict[str, Any]:
+    def generate_commands(self, user_input: str, working_directory: Optional[str] = None, conversation_history: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         Convert natural language input to bash commands using LLM
 
         Args:
             user_input: Natural language description of desired action
             working_directory: Optional working directory to get file context from
+            conversation_history: Optional list of previous conversation turns for context
 
         Returns:
             Dict containing commands and explanations
         """
         system_prompt = self._get_system_prompt()
-        user_prompt = self._get_user_prompt(user_input, working_directory)
+        user_prompt = self._get_user_prompt(user_input, working_directory, conversation_history)
+
+        # Build messages with conversation history
+        messages = [{"role": "system", "content": system_prompt}]
+        
+        # Add conversation history if provided
+        if conversation_history:
+            for turn in conversation_history[-10:]:  # Last 10 turns for context
+                if turn.startswith("User:"):
+                    messages.append({"role": "user", "content": turn[5:].strip()})
+                elif turn.startswith("AI:"):
+                    messages.append({"role": "assistant", "content": turn[3:].strip()})
+        
+        messages.append({"role": "user", "content": user_prompt})
 
         try:
             response = self.client.chat.completions.create(
                 model=self.config.get("model", "x-ai/grok-4.1-fast:free"),
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
+                messages=messages,
                 temperature=self.config.get("temperature", 0.2),
                 max_tokens=self.config.get("max_tokens", 300)
             )
@@ -152,10 +163,18 @@ Guidelines:
         
         return base_prompt
 
-    def _get_user_prompt(self, user_input: str, working_directory: Optional[str] = None) -> str:
+    def _get_user_prompt(self, user_input: str, working_directory: Optional[str] = None, conversation_history: Optional[List[str]] = None) -> str:
         """Get the user prompt for command generation with file context"""
         base_prompt = f"""Convert this user request into safe bash commands: "{user_input}"
 """
+        
+        # Add conversation context if available
+        if conversation_history and len(conversation_history) > 0:
+            base_prompt += "\nPrevious conversation context (for reference):\n"
+            # Include last 5 turns for context
+            for turn in conversation_history[-5:]:
+                base_prompt += f"  {turn}\n"
+            base_prompt += "\n"
         
         # Add system summary for quick reference
         if self.system_info:
@@ -262,13 +281,14 @@ CRITICAL: Use the EXACT filenames (including case) from the list above.
         except Exception:
             return False
 
-    def analyze_query(self, user_query: str, working_directory: Optional[str] = None) -> Dict[str, Any]:
+    def analyze_query(self, user_query: str, working_directory: Optional[str] = None, conversation_history: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         Analyze a user query to determine if it needs command execution or just a conversational response
         
         Args:
             user_query: The user's question or request
             working_directory: Optional working directory for context
+            conversation_history: Optional list of previous conversation turns for context
             
         Returns:
             Dict with analysis result indicating if commands are needed
@@ -297,14 +317,30 @@ Examples:
         user_prompt = f"""Analyze this user query: "{user_query}"
 
 Determine if it needs command execution or can be answered conversationally."""
+        
+        # Add conversation context if available
+        if conversation_history and len(conversation_history) > 0:
+            user_prompt += "\n\nPrevious conversation context (for reference):\n"
+            for turn in conversation_history[-5:]:
+                user_prompt += f"  {turn}\n"
+
+        # Build messages with conversation history
+        messages = [{"role": "system", "content": system_prompt}]
+        
+        # Add conversation history if provided
+        if conversation_history:
+            for turn in conversation_history[-10:]:  # Last 10 turns for context
+                if turn.startswith("User:"):
+                    messages.append({"role": "user", "content": turn[5:].strip()})
+                elif turn.startswith("AI:"):
+                    messages.append({"role": "assistant", "content": turn[3:].strip()})
+        
+        messages.append({"role": "user", "content": user_prompt})
 
         try:
             response = self.client.chat.completions.create(
                 model=self.config.get("model", "x-ai/grok-4.1-fast:free"),
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
+                messages=messages,
                 temperature=0.3,
                 max_tokens=200
             )
@@ -324,7 +360,8 @@ Determine if it needs command execution or can be answered conversationally."""
         self, 
         user_query: str, 
         command_results: Optional[List[Dict[str, Any]]] = None,
-        working_directory: Optional[str] = None
+        working_directory: Optional[str] = None,
+        conversation_history: Optional[List[str]] = None
     ) -> str:
         """
         Generate a natural language response to a user query
@@ -333,6 +370,7 @@ Determine if it needs command execution or can be answered conversationally."""
             user_query: The user's question or request
             command_results: Optional list of command execution results
             working_directory: Optional working directory for context
+            conversation_history: Optional list of previous conversation turns for context
             
         Returns:
             Natural language response string
@@ -376,14 +414,30 @@ Guidelines:
             file_context = self._get_file_context(working_directory)
             if file_context:
                 user_prompt += f"\n\nCurrent directory context: {file_context}"
+        
+        # Add conversation context if available
+        if conversation_history and len(conversation_history) > 0:
+            user_prompt += "\n\nPrevious conversation context (for reference):\n"
+            for turn in conversation_history[-5:]:
+                user_prompt += f"  {turn}\n"
+
+        # Build messages with conversation history
+        messages = [{"role": "system", "content": system_prompt}]
+        
+        # Add conversation history if provided
+        if conversation_history:
+            for turn in conversation_history[-10:]:  # Last 10 turns for context
+                if turn.startswith("User:"):
+                    messages.append({"role": "user", "content": turn[5:].strip()})
+                elif turn.startswith("AI:"):
+                    messages.append({"role": "assistant", "content": turn[3:].strip()})
+        
+        messages.append({"role": "user", "content": user_prompt})
 
         try:
             response = self.client.chat.completions.create(
                 model=self.config.get("model", "x-ai/grok-4.1-fast:free"),
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
+                messages=messages,
                 temperature=0.7,  # Higher temperature for more natural responses
                 max_tokens=800  # More tokens for conversational responses
             )

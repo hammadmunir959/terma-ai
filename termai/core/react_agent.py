@@ -43,14 +43,14 @@ class ReActAgent:
         self.observation_history: List[Dict[str, Any]] = []
         self.action_history: List[Dict[str, Any]] = []
         self.reasoning_history: List[str] = []
-        self.max_iterations = 7  # Default to 7, encourage 3-5
+        self.max_iterations = 5  # Default to 5, encourage 2-3 mostly
         self.current_iteration = 0
 
     def achieve_goal(
         self, 
         goal: str, 
         auto_confirm: bool = False,
-        max_iterations: int = 7,
+        max_iterations: int = 5,
         verbose: bool = True
     ) -> Dict[str, Any]:
         """
@@ -59,7 +59,7 @@ class ReActAgent:
         Args:
             goal: Natural language description of the goal
             auto_confirm: Automatically confirm risky actions
-            max_iterations: Maximum number of observe-reason-plan-act cycles (default: 7, encourage 3-5)
+            max_iterations: Maximum number of observe-reason-plan-act cycles (default: 5, encourage 2-3 mostly)
             verbose: Show detailed reasoning and observations
             
         Returns:
@@ -85,7 +85,7 @@ class ReActAgent:
             f"[bold blue]🤖 ReAct Agent[/bold blue]\n\n"
             f"[bold]Goal:[/bold] {goal}\n"
             f"[dim]Starting from: {self.executor.get_working_directory()}[/dim]\n"
-            f"[dim]Max iterations: {max_iterations} (3-5 recommended for most goals)[/dim]",
+            f"[dim]Max iterations: {max_iterations} (2-3 recommended for most goals)[/dim]",
             title="Goal Achievement",
             border_style="blue"
         ))
@@ -347,10 +347,10 @@ Return as JSON:
       "estimated_commands": ["command1", "command2"]
     }}
   ],
-  "estimated_iterations": 3-5
+  "estimated_iterations": 2-3
 }}
 
-Aim for 3-7 todos that can be completed in 3-5 iterations."""
+Aim for 3-7 todos that can be completed in 2-3 iterations mostly."""
 
         try:
             response = self.llm_client.client.chat.completions.create(

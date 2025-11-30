@@ -26,7 +26,8 @@ class ConversationalAgent:
         self, 
         user_query: str, 
         auto_execute: bool = True,
-        confirm_risky: bool = True
+        confirm_risky: bool = True,
+        conversation_history: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
         Process a user query - answer conversationally or execute commands as needed
@@ -35,13 +36,18 @@ class ConversationalAgent:
             user_query: The user's question or request
             auto_execute: If True, automatically execute safe commands
             confirm_risky: If True, ask for confirmation before risky commands
+            conversation_history: Optional list of previous conversation turns for context
             
         Returns:
             Dict with response and execution results
         """
         # Step 1: Analyze the query
         self.console.print(f"[dim]🤔 Analyzing query...[/dim]")
-        analysis = self.llm_client.analyze_query(user_query, self.executor.get_working_directory())
+        analysis = self.llm_client.analyze_query(
+            user_query, 
+            self.executor.get_working_directory(),
+            conversation_history=conversation_history
+        )
         
         needs_execution = analysis.get("needs_execution", True)
         query_type = analysis.get("query_type", "command_request")
@@ -53,7 +59,8 @@ class ConversationalAgent:
             response = self.llm_client.generate_conversational_response(
                 user_query,
                 command_results=None,
-                working_directory=self.executor.get_working_directory()
+                working_directory=self.executor.get_working_directory(),
+                conversation_history=conversation_history
             )
             
             # Display response in a nice panel
@@ -78,7 +85,11 @@ class ConversationalAgent:
             
             # Generate commands
             working_dir = self.executor.get_working_directory()
-            llm_response = self.llm_client.generate_commands(user_query, working_directory=working_dir)
+            llm_response = self.llm_client.generate_commands(
+                user_query, 
+                working_directory=working_dir,
+                conversation_history=conversation_history
+            )
             
             if llm_response.get("error"):
                 error_msg = llm_response.get("error", "Unknown error")
@@ -96,7 +107,8 @@ class ConversationalAgent:
                 response = self.llm_client.generate_conversational_response(
                     user_query,
                     command_results=None,
-                    working_directory=working_dir
+                    working_directory=working_dir,
+                    conversation_history=conversation_history
                 )
                 panel = Panel(
                     Markdown(response),
@@ -154,7 +166,8 @@ class ConversationalAgent:
             response = self.llm_client.generate_conversational_response(
                 user_query,
                 command_results=execution_result["results"],
-                working_directory=working_dir
+                working_directory=working_dir,
+                conversation_history=conversation_history
             )
             
             # Display response in a nice panel

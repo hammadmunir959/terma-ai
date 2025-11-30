@@ -143,8 +143,8 @@ class TermaShell:
         return False
 
     def _process_command(self, user_input: str):
-        """Process a user command through AI using conversational agent"""
-        # Add to context
+        """Process a user command through AI using conversational agent with memory/context"""
+        # Add to context BEFORE processing so it's available for this query
         self.context_history.append(f"User: {user_input}")
         self.command_history.append(user_input)
         
@@ -153,13 +153,15 @@ class TermaShell:
         
         # Use conversational agent to process the query
         # This will automatically determine if commands are needed and provide natural language responses
+        # Pass conversation history for context-aware responses - memory is actively used here!
         result = self.conversational_agent.process_query(
             user_input,
             auto_execute=True,
-            confirm_risky=True
+            confirm_risky=True,
+            conversation_history=self.context_history  # Memory is passed and actively used
         )
         
-        # Add to context based on result type
+        # Add to context based on result type (for future queries)
         if result.get("executed_commands"):
             self.context_history.append(f"AI: {result.get('response', 'Command executed')}")
         else:
@@ -175,11 +177,11 @@ class TermaShell:
         self.react_agent.executor = self.executor
         
         # Use ReAct agent to achieve the goal with enhanced features
-        # Default to 7 iterations, but encourage 3-5
+        # Default to 5 iterations, but encourage 2-3 mostly
         result = self.react_agent.achieve_goal(
             goal,
             auto_confirm=False,  # Ask for confirmation in shell
-            max_iterations=7,    # Default to 7, encourage 3-5
+            max_iterations=5,    # Default to 5, encourage 2-3 mostly
             verbose=True         # Show all step-by-step feedback
         )
         
@@ -238,7 +240,7 @@ class TermaShell:
   - Provides step-by-step feedback ("Now I'm doing X", "Next I'll do Y")
   - Works systematically through todos
   - Generates natural language summaries
-  - Uses Observe → Reason → Plan → Act loop (3-7 iterations recommended)
+  - Uses Observe → Reason → Plan → Act loop (2-3 iterations recommended mostly, max 5)
         """
         self.console.print(Panel(help_text, title="Help", border_style="cyan"))
 

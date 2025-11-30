@@ -978,7 +978,7 @@ def react(
     ctx: typer.Context,
     goal: Optional[str] = typer.Argument(None, help="Goal to achieve using ReAct methodology"),
     auto_confirm: bool = typer.Option(False, "--auto", help="Auto-confirm risky actions without asking"),
-    max_iterations: int = typer.Option(7, "--max-iterations", help="Maximum number of observe-reason-plan-act cycles (default: 7, 3-5 recommended)"),
+    max_iterations: int = typer.Option(5, "--max-iterations", help="Maximum number of observe-reason-plan-act cycles (default: 5, 2-3 recommended mostly)"),
     verbose: bool = typer.Option(True, "--verbose/--quiet", help="Show detailed reasoning and observations"),
     cwd: Optional[str] = typer.Option(None, "--cwd", help="Working directory for execution")
 ):
